@@ -56,7 +56,13 @@ class NamedScopeBehavior extends ModelBehavior
      */
     function setup($model, $settings = array())
     {
+        $settings = (array)$settings;
         foreach ($settings as $named => $options) {
+            if (!is_array($options)) {
+                unset($settings[$named]);
+                $settings[$options] = array();
+                $named = $options;
+            }
             $model->_findMethods[$named] = true;
             $this->mapMethods['/find' . $named . '/'] = '_findScoped';
             $this->mapMethods['/' . $named . '/'] = '_methodScoped';
@@ -80,8 +86,7 @@ class NamedScopeBehavior extends ModelBehavior
     {
         if ($state == 'before') {        
             preg_match('/^_find(\w+)/', $method, $matches);
-            $params = array_merge($params, $this->_settings[$model->alias][$matches[1]]);
-            return $params;
+            return $this->_mergeParams($model, $params, $matches[1]);
         } elseif ($state == 'after') {
 			return $results;
         }
@@ -102,8 +107,32 @@ class NamedScopeBehavior extends ModelBehavior
 			$conditions = 'first';
 			$fields = array_merge(compact('conditions', 'fields', 'order', 'recursive'), array('limit' => 1));
 		}
-        $fields = Set::merge($fields, $this->_settings[$model->alias][$method]);
+        $fields = $this->_mergeParams($model, $fields, $method);
         return $model->dispatchMethod('find', array($conditions, $fields));
+    }
+    
+    /**
+     * Merges params, to ensure that all required params are set. The params passed to the find call
+     * always take precedence, over those set in the behavior settings.
+     * 
+     * @param object $model The model object
+     * @param array $params The params passed to the find call
+     * @param string $method Method name called
+     * 
+     * @return array Merged params
+     */
+    function _mergeParams($model, $params, $method)
+    {
+        foreach ($this->_settings[$model->alias][$method] as $key => $value) {
+            if (is_array($value)) {
+                $params[$key] = isset($params[$key]) ? Set::merge($params[$key], $value) : $value;
+            } else {
+                if (!isset($params[$key]) || empty($params[$key])) {
+                    $params[$key] = $value;
+                }
+            }
+        }
+        return $params;
     }
   
 }
